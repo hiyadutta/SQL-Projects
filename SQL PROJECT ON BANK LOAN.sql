@@ -1,0 +1,257 @@
+CREATE DATABASE BANK;
+USE BANK;
+
+/* DISTINCT LOAN STATUS */
+
+SELECT DISTINCT
+    LOAN_STATUS
+FROM
+    BANK_LOAN;
+
+/*TOTAL LOAN APPLICATIONS*/
+
+SELECT 
+    COUNT(ID) AS TOTAL_APPLICATION
+FROM
+    BANK_LOAN;
+
+/* TOTAL FUNDED AMOUNT*/
+
+SELECT 
+    SUM(LOAN_AMOUNT) / 1000000 AS 'TOTAL_FUND_(MILLIONS)'
+FROM
+    BANK_LOAN;
+
+/* TOTAL PAYMENT RECEIVED*/
+
+SELECT 
+    SUM(TOTAL_PAYMENT) / 1000000 AS 'TOTAL_PAYMENT_(MILLIONS)'
+FROM
+    BANK_LOAN;
+
+/* AVERAGE INTEREST RATE*/
+
+SELECT 
+    PURPOSE, ROUND(AVG(INT_RATE), 2) AS AVG_INT
+FROM
+    BANK_LOAN
+GROUP BY PURPOSE
+ORDER BY AVG_INT DESC;
+
+/* AVERAGE DTI*/
+
+SELECT 
+    PURPOSE, ROUND(AVG(DTI), 2) AS AVG_DTI
+FROM
+    BANK_LOAN
+GROUP BY PURPOSE
+ORDER BY AVG_DTI DESC;
+
+
+/* AVERAGE DTI GROUP BY MONTH*/
+ALTER TABLE BANK_LOAN
+MODIFY issue_date date;   /* NEED TO CHANGE THE DTYPE OF THE ISSUE DATE COLUMN */
+
+SELECT 
+    YEAR(ISSUE_DATE) AS 'YEAR',
+    MONTH(ISSUE_DATE) AS 'MONTH',
+    ROUND(AVG(DTI), 2) AS AVG_DTI
+FROM
+    BANK_LOAN
+WHERE
+    YEAR(ISSUE_DATE) = 2021
+GROUP BY YEAR(ISSUE_DATE) , MONTH(ISSUE_DATE)
+ORDER BY AVG_DTI DESC;
+
+
+/* GOOD LOAN APPLICATION % */
+
+SELECT DISTINCT(LOAN_STATUS) FROM BANK_LOAN;
+
+SELECT 
+    ROUND(COUNT(CASE
+                WHEN LOAN_STATUS IN ('FULLY PAID' , 'CURRENT') THEN ID
+            END) * 100 / COUNT(ID),
+            2) AS 'GOOD LOAN IN %'
+FROM
+    BANK_LOAN;
+
+/* GOOD LOAN APPLICATIONS */
+
+SELECT 
+    COUNT(ID) AS TOTAL_APPLICATION,
+    COUNT(CASE
+        WHEN LOAN_STATUS IN ('FULLY PAID' , 'CURRENT') THEN ID
+    END) AS GOOD_LOAN
+FROM
+    BANK_LOAN;
+
+
+/* GOOD LOAN TOTAL AMNT RECD */
+
+SELECT 
+    CONCAT(ROUND(SUM(LOAN_AMOUNT) / 1000000, 2),
+            ' ',
+            'MILLION') AS TOTAL_GOODLOAN_AMOUNT
+FROM
+    BANK_LOAN
+WHERE
+    LOAN_STATUS IN ('FULLY PAID' , 'CURRENT');
+
+
+ /* BAD LOAN APPLICATIONS %  */
+
+SELECT 
+    CONCAT(ROUND(COUNT(CASE
+                        WHEN LOAN_STATUS = 'CHARGED OFF' THEN ID
+                    END) * 100 / COUNT(ID),
+                    2),
+            ' ',
+            '%') AS 'BAD_LOAN_%'
+FROM
+    BANK_LOAN;
+
+ /* BAD LOAN APPLICATIONS */
+SELECT 
+    COUNT(ID) AS BAD_LOAN
+FROM
+    BANK_LOAN
+WHERE
+    LOAN_STATUS = 'CHARGED OFF';
+ 
+/* BAD LOAN TOTAL AMNT RECD */
+ 
+SELECT 
+    ROUND(SUM(LOAN_AMOUNT) / 1000000, 2) AS BAD_LOAN_AMT_MILLION
+FROM
+    BANK_LOAN
+WHERE
+    LOAN_STATUS = 'CHARGED OFF';
+   
+/* MONTH OVER MONTH TOTAL AMOUNT RECD  */
+ WITH MONTHLYTOTALS AS (
+     SELECT 
+	    YEAR(ISSUE_DATE) AS 'YEAR',
+	    MONTH(ISSUE_DATE) AS 'MONTH',
+	    SUM(TOTAL_PAYMENT) AS 'MONTHLY_TOTAL_PAYMENT_RECEIVED'
+	 FROM BANK_LOAN
+	 WHERE YEAR(ISSUE_DATE) = 2021
+	 GROUP BY YEAR(ISSUE_DATE), MONTH(ISSUE_DATE)),
+MONTHOVERMONTH AS (
+     SELECT 
+	       T1.YEAR,
+	       T1.MONTH,
+	       T1.MONTHLY_TOTAL_PAYMENT_RECEIVED AS 'CURRENT_MONTH_PAYMENT',
+	       T2.MONTHLY_TOTAL_PAYMENT_RECEIVED AS 'PREVIOUS_MONTH_PAYMENT',
+	       T1.MONTHLY_TOTAL_PAYMENT_RECEIVED - T2.MONTHLY_TOTAL_PAYMENT_RECEIVED AS 'MONTH_OVER_MONTH_AMOUNT'
+	 FROM MONTHLYTOTALS T1
+	 LEFT JOIN MONTHLYTOTALS T2 ON T1.YEAR = T2.YEAR AND T1.MONTH = T2.MONTH + 1
+)
+SELECT YEAR, MONTH, MONTH_OVER_MONTH_AMOUNT
+FROM MONTHOVERMONTH
+ORDER BY YEAR, MONTH;
+ 
+ /* MONTH TO MONTH AVERAGE INTEREST RATE  */
+ 
+ WITH MonthlyInterestRate AS(
+	SELECT YEAR(ISSUE_DATE) AS YEAR, MONTH(ISSUE_DATE) AS MONTH,
+	ROUND(AVG(INT_RATE)*100,2) as monthly_average_interest_rate
+	FROM BANK_LOAN
+	WHERE YEAR(ISSUE_DATE) = 2021
+	GROUP BY YEAR(ISSUE_DATE), MONTH(ISSUE_DATE)
+), 
+MonthOverMonthInterestRate AS(
+	SELECT
+		MIR1.Year,
+		MIR1.Month,
+		MIR1.monthly_average_interest_rate as Current_Month_Interest_Rate,
+		MIR2.monthly_average_interest_rate as Previous_Month_Interest_Rate,
+		ROUND((MIR1.monthly_average_interest_rate - MIR2.monthly_average_interest_rate),2) as Month_Over_Month_Interest_Rate
+	FROM MonthlyInterestRate MIR1
+	LEFT JOIN MonthlyInterestRate MIR2
+	ON MIR1.Year = MIR2.Year and MIR1.Month = MIR2.Month+1
+)
+SELECT YEAR, MONTH, Current_Month_Interest_Rate, Previous_Month_Interest_Rate, Month_Over_Month_Interest_Rate 
+FROM MonthOverMonthInterestRate 
+ORDER BY YEAR, MONTH;
+    
+    
+ /* The top three states with the highest average loan amounts for loans that are fully paid  */
+
+SELECT 
+    EMP_TITLE, ADDRESS_STATE, AVG(LOAN_AMOUNT) AS AVG_LOAN
+FROM
+    BANK_LOAN
+WHERE
+    LOAN_STATUS = 'FULLY PAID'
+GROUP BY EMP_TITLE , ADDRESS_STATE
+ORDER BY AVG_LOAN DESC
+LIMIT 3;
+
+
+ /* All employees with less than 5 years of experience who have a lower than average debt-to-income ratio  */ 
+
+SELECT 
+    EMP_TITLE, EMP_LENGTH, DTI
+FROM
+    BANK_LOAN
+WHERE
+    EMP_LENGTH IN ('< 1 year' , '1 year',
+        '2 years',
+        '3 years',
+        '4 years')
+        AND DTI < (SELECT 
+            AVG(DTI)
+        FROM
+            BANK_LOAN)
+            ORDER BY DTI DESC;
+ 
+ /* The cumulative total payment for each state, ordering by issue_date  */
+ 
+SELECT 
+	ID,
+	ISSUE_DATE, 
+	ADDRESS_STATE, 
+	TOTAL_PAYMENT,  
+	SUM(TOTAL_PAYMENT) OVER(PARTITION BY ADDRESS_STATE ORDER BY ISSUE_DATE) AS CUMULATIVE_PAYMENT 
+FROM BANK_LOAN;
+
+ /* Total number of loans and the average loan amount for each employment length category, with a "Verified" status */
+ 
+SELECT 
+    COUNT(LOAN_AMOUNT) AS LOAN_NUM,
+    ROUND(AVG(LOAN_AMOUNT), 2) AS AVG_LOAN,
+    EMP_LENGTH
+FROM
+    BANK_LOAN
+WHERE
+    VERIFICATION_STATUS = 'Verified'
+GROUP BY EMP_LENGTH
+ORDER BY LOAN_NUM DESC;
+ 
+ /*  Count the number of loans per state where the loan amount is above the median loan amount of all loans in the dataset  */
+    
+SELECT 
+    ADDRESS_STATE,
+    COUNT(*) AS LOANS_ABOVE_MEDIAN
+FROM 
+    BANK_LOAN
+WHERE 
+    LOAN_AMOUNT > (
+        SELECT 
+            LOAN_AMOUNT
+        FROM (
+            SELECT 
+                LOAN_AMOUNT,
+                ROW_NUMBER() OVER (ORDER BY LOAN_AMOUNT) AS ROW_NUM,
+                COUNT(*) OVER () AS TOTAL_COUNT
+            FROM 
+                BANK_LOAN
+        ) AS RANKED_LOANS
+        WHERE 
+            ROW_NUM = FLOOR((TOTAL_COUNT) / 2)
+    )
+GROUP BY 
+    ADDRESS_STATE;
+
+
